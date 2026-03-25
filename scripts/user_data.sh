@@ -1,0 +1,393 @@
+
+#!/bin/bash
+# Run as root
+sudo su 
+
+# Update and install Jenkins dependencies
+yum -y update 
+sudo wget -O /etc/yum.repos.d/jenkins.repo https://pkg.jenkins.io/redhat-stable/jenkins.repo
+sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+sudo yum upgrade -y
+sudo yum install java-21-amazon-corretto-devel -y
+sudo yum install -y jenkins-2.479.3-1.1.noarch
+
+# Start and enable Jenkins
+sudo systemctl enable jenkins
+sudo systemctl start jenkins
+
+# Install Nginx for the health check endpoint
+yum install -y nginx
+
+# Create the health check HTML file
+mkdir -p /var/www/healthcheck
+echo "<html><body>Healthy</body></html>" > /var/www/healthcheck/index.html
+
+# Configure Nginx to serve the health check page on port 8081
+cat <<EOT > /etc/nginx/conf.d/healthcheck.conf
+server {
+    listen 8081;
+    location / {
+        root /var/www/healthcheck;
+        index index.html;
+    }
+}
+EOT
+
+# Start and enable Nginx to serve the health check endpoint
+sudo systemctl enable nginx
+sudo systemctl start nginx
+
+# Install Required Packages
+echo "Updating system and installing basic utilities..."
+sudo yum install -y git unzip curl wget
+
+# Install AWS CLI
+echo "Installing AWS CLI..."
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"
+unzip /tmp/awscliv2.zip -d /tmp
+sudo /tmp/aws/install
+rm -rf /tmp/awscliv2.zip /tmp/aws
+
+# Install Terraform
+echo "Installing Terraform..."
+curl -fsSL https://releases.hashicorp.com/terraform/1.5.7/terraform_1.5.7_linux_amd64.zip -o ~/terraform.zip
+sudo unzip ~/terraform.zip -d /usr/local/bin
+rm ~/terraform.zip
+
+# Install SonarScanner
+echo "Installing SonarScanner..."
+curl -fsSL https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-5.0.1.3006-linux.zip -o /tmp/sonar-scanner.zip
+sudo unzip /tmp/sonar-scanner.zip -d /opt/
+sudo mv /opt/sonar-scanner-* /opt/sonar-scanner
+sudo ln -s /opt/sonar-scanner/bin/sonar-scanner /usr/local/bin/sonar-scanner
+rm /tmp/sonar-scanner.zip
+
+# Install Node.js & npm
+echo "Installing Node.js & npm..."
+sudo yum install -y nodejs npm
+node -v
+npm -v
+
+# Install Snyk
+echo "Installing Snyk..."
+sudo npm install -g snyk
+
+# Ensure Git is installed
+echo "Ensuring Git is installed..."
+sudo yum install -y git
+
+# Print the Jenkins initial admin password to the logs
+sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+
+echo "All installations completed successfully."
+
+
+
+pipeline {
+    agent any
+
+    environment {
+        AWS_REGION = 'us-west-1'
+        SONARQUBE_URL = "https://sonarcloud.io"
+        JIRA_SITE = "https://jastekops.atlassian.net"
+        JIRA_PROJECT = "JENKINS"
+    }
+
+    stages {
+        stage('Set AWS Credentials') {
+            steps {
+                withCredentials([aws(credentialsId: 'AWS_SECRET_ACCESS_KEY', accessKeyVariable: 'AWS_ACCESS_KEY_ID', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                    sh '''
+                    echo "AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID"
+                    aws sts get-caller-identity
+                    '''
+                }
+            }
+        }
+
+        stage('Checkout Code') {
+            steps {
+                git branch: 'main', url: 'https://github.com/jastek69/jenkins-pipeline-test3'
+            }
+        }
+        stage('Test Jira Ticket Creation') {
+            steps {
+                script {
+                    echo "Testing Jira ticket creation from Jenkins pipeline..."
+                    createJiraTicket("Jenkins Pipeline Test", "This is a test issue created from Jenkins to validate Jira integration.")
+                }
+            }
+        }
+
+        stage('Static Code Analysis (SAST)') {
+            steps {
+                script {
+                    withCredentials([string(credentialsId: 'SONARQUBE_TOKEN_ID', variable: 'SONAR_TOKEN')]) {
+
+                        // Run SonarQube Scan
+                        def scanStatus = sh(script: '''
+                            ${SONAR_SCANNER_HOME}/bin/sonar-scanner \
+                            -Dsonar.projectKey=jastekops \
+                            -Dsonar.organization=Jastekops \
+                            -Dsonar.host.url=${SONARQUBE_URL} \
+                            -Dsonar.login=${SONAR_TOKEN}
+                        ''', returnStatus: true)
+
+                        if (scanStatus != 0) {
+
+                            def sonarIssues = sh(script: '''
+                                curl -s -u ${SONAR_TOKEN}: \
+                                "${SONARQUBE_URL}/api/issues/search?componentKeys=jastekops&severities=BLOCKER,CRITICAL&statuses=OPEN" | jq -r '.issues[].message' || echo "No issues found"
+                            ''', returnStdout: true).trim()
+
+                            if (!sonarIssues.contains("No issues found")) {
+                                def issueDescription = """ 
+                                    **SonarCloud Security Issues:**
+                                    ${sonarIssues}
+                                """.stripIndent()
+
+                                echo "Creating Jira Ticket for SonarCloud issues..."
+                                createJiraTicket("SonarQube Security Vulnerabilities Detected", issueDescription)
+                                error("SonarQube found security vulnerabilities! Pipeline stopping.")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Snyk Security Scan') {
+            steps {
+                script {
+                    withCredentials([string(credentialsId: 'SNYK_AUTH_TOKEN_ID', variable: 'SNYK_TOKEN')]) {
+                        sh 'export SNYK_TOKEN=${SNYK_TOKEN}'
+
+                        // Run Snyk scan and save output to a file
+                        def snykScanStatus = sh(script: "snyk iac test --json --severity-threshold=low > snyk-results.json || echo 'Scan completed'", returnStatus: true)
+                        echo "Snyk Scan Status: ${snykScanStatus}"
+
+                        // Print the full JSON for debugging
+                        sh "cat snyk-results.json"
+
+                        // Extract issues as a proper JSON array
+                        sh "jq -c '.infrastructureAsCodeIssues | map({title, severity, impact, resolution})' snyk-results.json > snyk-issues-parsed.json"
+
+                        // Read the extracted JSON
+                        def snykIssuesList = readJSON(file: "snyk-issues-parsed.json")
+
+                        echo "DEBUG: Total Snyk Issues Found: ${snykIssuesList.size()}"
+
+                        if (snykIssuesList.size() > 0) {
+                            for (issue in snykIssuesList) {
+                                echo "DEBUG: Processing Issue: ${issue}"
+
+                                def issueTitle = "Snyk Issue: ${issue.title} - Severity: ${issue.severity}"
+                                def issueDescription = """
+                                Impact: ${issue.impact}
+                                Resolution: ${issue.resolution}
+                                """
+
+                                echo "Creating Jira Ticket for: ${issueTitle}"
+                                echo "Description:\n${issueDescription}"
+
+                                // Call Jira ticket creation function
+                                def jiraIssueKey = createJiraTicket(issueTitle, issueDescription)
+                                echo "Jira Ticket Created: ${jiraIssueKey}"
+
+                                // Mark the scan as failed if a Jira ticket is created
+                                env.SCAN_FAILED = "true"
+                            }
+                        } else {
+                            echo "DEBUG: No issues to process."
+                        }
+                    }
+                }
+            }
+        }
+
+
+
+        stage('Aqua Trivy Security Scan') {
+            steps {
+                script {
+                    def trivyScanStatus = sh(script: '''
+                        trivy config -f json . | tee trivy-report.json || true
+                    ''', returnStatus: true)
+
+                    if (!fileExists('trivy-report.json')) {
+                        echo "Trivy report not found. Skipping analysis."
+                        return
+                    }
+
+                    // Extract issues as JSON
+                    def trivyIssues = sh(script: '''
+                        jq -c '.Results[].Misconfigurations[] | {title: .ID, severity: .Severity, description: .Description, resolution: .Resolution}' trivy-report.json || echo ''
+                    ''', returnStdout: true).trim().split("\n")
+
+                    if (trivyIssues.size() > 0 && trivyIssues[0].trim() != "") {
+                        echo "Security vulnerabilities detected by Trivy!"
+
+                        for (issue in trivyIssues) {
+                            echo "Processing Trivy Issue: ${issue}"
+
+                            def parsedIssue = readJSON(text: issue)
+                            def issueTitle = "Trivy Issue: ${parsedIssue.title} - Severity: ${parsedIssue.severity}"
+                            def issueDescription = """
+                            Description: ${parsedIssue.description}
+                            Resolution: ${parsedIssue.resolution}
+                            """
+
+                            echo "Creating Jira Ticket for: ${issueTitle}"
+                            def jiraIssueKey = createJiraTicket(issueTitle, issueDescription)
+                            echo "Jira Ticket Created: ${jiraIssueKey}"
+
+                            // Mark scan as failed if a Jira ticket is created
+                            env.SCAN_FAILED = "true"
+                        }
+                    } else {
+                        echo "No security vulnerabilities detected by Trivy."
+                    }
+                }
+            }
+        }
+
+        stage('Fail Pipeline if Any Scan Fails') {
+            steps {
+                script {
+                    if (env.SCAN_FAILED?.trim() == "true") {
+                        echo "Security scans detected vulnerabilities! Stopping the pipeline."
+                        error("Security vulnerabilities detected! See Jira tickets for details.")
+                    } else {
+                        echo "All security scans passed successfully."
+                    }
+                }
+            }
+        }
+
+
+        stage('Initialize Terraform') {
+            steps {
+                sh 'terraform init'
+            }
+        }
+
+        stage('Plan Terraform') {
+            steps {
+                withCredentials([aws(credentialsId: 'AWS_SECRET_ACCESS_KEY', accessKeyVariable: 'AWS_ACCESS_KEY_ID', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                    sh '''
+                    export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+                    export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+                    terraform plan -out=tfplan
+                    '''
+                }
+            }
+        }
+
+        stage('Apply Terraform') {
+            steps {
+                input message: "Approve Terraform Apply?", ok: "Deploy"
+                withCredentials([aws(credentialsId: 'AWS_SECRET_ACCESS_KEY', accessKeyVariable: 'AWS_ACCESS_KEY_ID', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY')]) {
+                    sh '''
+                    export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+                    export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+                    terraform apply -auto-approve tfplan
+                    '''
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Terraform deployment completed successfully!'
+        }
+
+        failure {
+            echo 'Terraform deployment failed!'
+        }
+    }
+}
+
+def createJiraTicket(String issueTitle, String issueDescription) {
+    script {
+        withCredentials([
+            string(credentialsId: 'JIRA_API_TOKEN', variable: 'JIRA_TOKEN'),
+            string(credentialsId: 'JIRA_EMAIL', variable: 'JIRA_USER')
+        ]) {
+            
+            def formattedDescription = issueDescription
+                .replaceAll('"', '\\"')  
+                .replaceAll("\n", "\\n") 
+                .replaceAll("\r", "")    
+
+            def jiraPayload = """
+            {
+                "fields": {
+                    "project": { "key": "JENKINS" },
+                    "summary": "${issueTitle}",
+                    "description": {
+                        "type": "doc",
+                        "version": 1,
+                        "content": [
+                            {
+                                "type": "paragraph",
+                                "content": [
+                                    {
+                                        "type": "text",
+                                        "text": "${formattedDescription}"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    "issuetype": { "name": "Bug" }
+                }
+            }
+            """
+
+            writeFile file: 'jira_payload.json', text: jiraPayload
+
+            withEnv(["JIRA_CREDS=${JIRA_USER}:${JIRA_TOKEN}"]) {
+                // **Step 1: Search for an existing Jira ticket securely**
+                def searchQuery = URLEncoder.encode("project=JENKINS AND summary~\"${issueTitle}\" AND status != Done", "UTF-8")
+                def searchResponse = sh(script: '''
+                    export JIRA_CREDS
+                    curl -s -u "$JIRA_CREDS" \
+                    -X GET "https://jastekops.atlassian.net/rest/api/3/search?jql=''' + searchQuery + '''" \
+                    -H "Accept: application/json"
+                ''', returnStdout: true).trim()
+
+                
+
+                def existingIssues = readJSON(text: searchResponse)
+                
+
+                if (existingIssues.issues.size() > 0) {
+                    echo "Jira issue already exists: ${existingIssues.issues[0].key}. Skipping ticket creation."
+                    return existingIssues.issues[0].key
+                }
+
+                echo "No existing Jira issue found. Creating a new ticket..."
+
+                // **Step 3: Create a new Jira issue securely**
+                def createResponse = sh(script: '''
+                    export JIRA_CREDS
+                    curl -X POST "https://jastekops.atlassian.net/rest/api/3/issue" \
+                    -u "$JIRA_CREDS" \
+                    -H "Content-Type: application/json" \
+                    --data @jira_payload.json
+                ''', returnStdout: true).trim()
+
+                echo "Jira Response: ${createResponse}"
+
+                def createdIssue = readJSON(text: createResponse)
+
+                if (!createdIssue.containsKey("key")) {
+                    error("Jira ticket creation failed! Response: ${createResponse}")
+                }
+
+                return createdIssue.key
+            }
+        }
+    }
+}
