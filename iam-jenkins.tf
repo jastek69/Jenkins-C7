@@ -210,7 +210,12 @@ resource "aws_iam_policy" "jenkins_terraform_compute" {
           "ec2:CreateFlowLogs",
           "ec2:DeleteFlowLogs",
           "ec2:GetTransitGatewayRouteTableAssociations",
-          "ec2:GetTransitGatewayRouteTablePropagations"
+          "ec2:GetTransitGatewayRouteTablePropagations",
+          "ec2:CreateLaunchTemplate",
+          "ec2:DeleteLaunchTemplate",
+          "ec2:ModifyLaunchTemplate",
+          "ec2:DescribeLaunchTemplates",
+          "ec2:DescribeLaunchTemplateVersions"
         ]
         Resource = "*"
       },
