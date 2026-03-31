@@ -386,7 +386,9 @@ resource "aws_iam_policy" "jenkins_terraform_application" {
           "s3:GetBucketRequestPayment",
           "s3:PutBucketRequestPayment",
           "s3:GetReplicationConfiguration",
-          "s3:PutReplicationConfiguration"
+          "s3:PutReplicationConfiguration",
+          "s3:GetBucketObjectLockConfiguration",
+          "s3:PutBucketObjectLockConfiguration"
         ]
         Resource = "*"
       },
