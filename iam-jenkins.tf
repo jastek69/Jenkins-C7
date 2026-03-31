@@ -268,6 +268,8 @@ resource "aws_iam_policy" "jenkins_terraform_security" {
           "iam:DeleteInstanceProfile",
           "iam:AddRoleToInstanceProfile",
           "iam:RemoveRoleFromInstanceProfile",
+          "iam:TagInstanceProfile",
+          "iam:UntagInstanceProfile",
           "iam:GetRolePolicy"
         ]
         Resource = "*"
@@ -362,6 +364,9 @@ resource "aws_iam_policy" "jenkins_terraform_application" {
       {
         Effect = "Allow"
         Action = [
+          "s3:CreateBucket",
+          "s3:DeleteBucket",
+          "s3:ListBucket",
           "s3:GetBucketPolicy",
           "s3:PutBucketPolicy",
           "s3:DeleteBucketPolicy",
