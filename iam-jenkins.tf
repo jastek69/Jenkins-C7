@@ -382,7 +382,9 @@ resource "aws_iam_policy" "jenkins_terraform_application" {
           "s3:PutBucketAcl",
           "s3:GetBucketWebsite",
           "s3:GetAccelerateConfiguration",
-          "s3:PutAccelerateConfiguration"
+          "s3:PutAccelerateConfiguration",
+          "s3:GetBucketRequestPayment",
+          "s3:PutBucketRequestPayment"
         ]
         Resource = "*"
       },
