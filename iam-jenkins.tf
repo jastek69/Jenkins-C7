@@ -342,7 +342,8 @@ resource "aws_iam_policy" "jenkins_terraform_security" {
           "wafv2:ListTagsForResource",
           "wafv2:AssociateWebACL",
           "wafv2:DisassociateWebACL",
-          "wafv2:GetLoggingConfiguration"
+          "wafv2:GetLoggingConfiguration",
+          "wafv2:GetWebACLForResource"
         ]
         Resource = "*"
       }
