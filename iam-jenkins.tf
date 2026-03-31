@@ -388,7 +388,9 @@ resource "aws_iam_policy" "jenkins_terraform_application" {
           "s3:GetReplicationConfiguration",
           "s3:PutReplicationConfiguration",
           "s3:GetBucketObjectLockConfiguration",
-          "s3:PutBucketObjectLockConfiguration"
+          "s3:PutBucketObjectLockConfiguration",
+          "s3:GetBucketOwnershipControls",
+          "s3:PutBucketOwnershipControls"
         ]
         Resource = "*"
       },
@@ -482,6 +484,8 @@ resource "aws_iam_policy" "jenkins_terraform_application" {
           "sns:DeleteTopic",
           "sns:Subscribe",
           "sns:Unsubscribe",
+          "sns:GetSubscriptionAttributes",
+          "sns:SetSubscriptionAttributes",
           "sns:ListTopics",
           "sns:ListSubscriptionsByTopic",
           "sns:TagResource",
