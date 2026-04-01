@@ -42,6 +42,32 @@ run_apply_targets() {
   cd - >/dev/null
 }
 
+seed_gcp_vpn_outputs() {
+  echo ""
+  echo "=== Verifying GCP HA VPN seed outputs for Tokyo ==="
+
+  # Targeted applies can leave derived outputs stale when no infra changes occur.
+  # Refresh-only ensures the state file persists current HA VPN interface IPs.
+  terraform -chdir=newyork_gcp apply -refresh-only -auto-approve >/dev/null
+
+  GCP_HA_VPN_IF0="$(terraform -chdir=newyork_gcp output -raw gcp_ha_vpn_interface_0_ip 2>/dev/null || true)"
+  GCP_HA_VPN_IF1="$(terraform -chdir=newyork_gcp output -raw gcp_ha_vpn_interface_1_ip 2>/dev/null || true)"
+
+  if [[ -z "$GCP_HA_VPN_IF0" || -z "$GCP_HA_VPN_IF1" || "$GCP_HA_VPN_IF0" == "null" || "$GCP_HA_VPN_IF1" == "null" ]]; then
+    echo "ERROR: GCP HA VPN seed outputs are empty; cannot continue to Tokyo VPN provisioning."
+    echo "  gcp_ha_vpn_interface_0_ip='$GCP_HA_VPN_IF0'"
+    echo "  gcp_ha_vpn_interface_1_ip='$GCP_HA_VPN_IF1'"
+    echo "Fix Stage 0 (newyork_gcp targeted seed) and rerun."
+    exit 1
+  fi
+
+  # Export explicit fallback values so Tokyo VPN provisioning does not depend solely on remote-state timing.
+  export TF_VAR_gcp_ha_vpn_interface_0_ip="$GCP_HA_VPN_IF0"
+  export TF_VAR_gcp_ha_vpn_interface_1_ip="$GCP_HA_VPN_IF1"
+
+  echo "  Seed outputs verified: IF0=$GCP_HA_VPN_IF0, IF1=$GCP_HA_VPN_IF1"
+}
+
 
 
 dump_outputs() {
@@ -200,6 +226,7 @@ run_apply_targets "newyork_gcp" "gcp-seed.tfplan" \
   "google_compute_ha_vpn_gateway.gcp-to-aws-vpn-gw"
 echo "Waiting ${WAIT_TIME}s for GCP HA VPN to stabilize..."
 sleep "$WAIT_TIME"
+seed_gcp_vpn_outputs
 
 # Stage 1: Tokyo
 run_apply "Tokyo" "tokyo.tfplan"
