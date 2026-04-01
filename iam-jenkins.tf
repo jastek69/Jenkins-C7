@@ -217,7 +217,9 @@ resource "aws_iam_policy" "jenkins_terraform_compute" {
           "ec2:CreateLaunchTemplateVersion",
           "ec2:DeleteLaunchTemplateVersion",
           "ec2:DescribeLaunchTemplates",
-          "ec2:DescribeLaunchTemplateVersions"
+          "ec2:DescribeLaunchTemplateVersions",
+          "ec2:RunInstances",
+          "ec2:TerminateInstances"
         ]
         Resource = "*"
       },
