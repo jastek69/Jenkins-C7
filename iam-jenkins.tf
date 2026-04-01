@@ -529,13 +529,20 @@ resource "aws_iam_policy" "jenkins_terraform_application" {
           "logs:CreateLogGroup",
           "logs:DeleteLogGroup",
           "logs:PutRetentionPolicy",
+          "logs:PutResourcePolicy",
+          "logs:DeleteResourcePolicy",
+          "logs:DescribeResourcePolicies",
           "logs:TagLogGroup",
           "logs:UntagLogGroup",
           "logs:ListTagsLogGroup",
           "logs:ListTagsForResource",
           "logs:DescribeLogStreams",
           "logs:CreateLogStream",
-          "logs:DeleteLogStream"
+          "logs:DeleteLogStream",
+          "logs:PutLogEvents",
+          "logs:CreateLogDelivery",
+          "logs:DeleteLogDelivery",
+          "logs:GetLogDelivery"
         ]
         Resource = "*"
       },
