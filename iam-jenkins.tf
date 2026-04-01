@@ -219,7 +219,8 @@ resource "aws_iam_policy" "jenkins_terraform_compute" {
           "ec2:DescribeLaunchTemplates",
           "ec2:DescribeLaunchTemplateVersions",
           "ec2:RunInstances",
-          "ec2:TerminateInstances"
+          "ec2:TerminateInstances",
+          "ec2:GetManagedPrefixListEntries"
         ]
         Resource = "*"
       },
@@ -405,7 +406,8 @@ resource "aws_iam_policy" "jenkins_terraform_application" {
           "s3:GetBucketObjectLockConfiguration",
           "s3:PutBucketObjectLockConfiguration",
           "s3:GetBucketOwnershipControls",
-          "s3:PutBucketOwnershipControls"
+          "s3:PutBucketOwnershipControls",
+          "s3:ListAllMyBuckets"
         ]
         Resource = "*"
       },
@@ -486,7 +488,10 @@ resource "aws_iam_policy" "jenkins_terraform_application" {
           "cloudfront:ListTagsForResource",
           "cloudfront:CreateOriginAccessControl",
           "cloudfront:DeleteOriginAccessControl",
-          "cloudfront:GetOriginAccessControl"
+          "cloudfront:GetOriginAccessControl",
+          "cloudfront:ListCachePolicies",
+          "cloudfront:ListOriginRequestPolicies",
+          "cloudfront:ListResponseHeadersPolicies"
         ]
         Resource = "*"
       },
