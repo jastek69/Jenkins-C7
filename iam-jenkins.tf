@@ -355,6 +355,8 @@ resource "aws_iam_policy" "jenkins_terraform_security" {
           "wafv2:AssociateWebACL",
           "wafv2:DisassociateWebACL",
           "wafv2:GetLoggingConfiguration",
+          "wafv2:PutLoggingConfiguration",
+          "wafv2:DeleteLoggingConfiguration",
           "wafv2:GetWebACLForResource"
         ]
         Resource = "*"
@@ -470,6 +472,9 @@ resource "aws_iam_policy" "jenkins_terraform_application" {
           "elasticloadbalancing:CreateListener",
           "elasticloadbalancing:DeleteListener",
           "elasticloadbalancing:ModifyListener",
+          "elasticloadbalancing:CreateRule",
+          "elasticloadbalancing:ModifyRule",
+          "elasticloadbalancing:DeleteRule",
           "elasticloadbalancing:AddTags",
           "elasticloadbalancing:RemoveTags"
         ]
