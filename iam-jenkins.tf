@@ -490,8 +490,11 @@ resource "aws_iam_policy" "jenkins_terraform_application" {
           "cloudfront:DeleteOriginAccessControl",
           "cloudfront:GetOriginAccessControl",
           "cloudfront:ListCachePolicies",
+          "cloudfront:GetCachePolicy",
           "cloudfront:ListOriginRequestPolicies",
-          "cloudfront:ListResponseHeadersPolicies"
+          "cloudfront:GetOriginRequestPolicy",
+          "cloudfront:ListResponseHeadersPolicies",
+          "cloudfront:GetResponseHeadersPolicy"
         ]
         Resource = "*"
       },
